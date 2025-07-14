@@ -143,7 +143,7 @@ class XyceTestRunner:
             d.write_pwl()
 
         # patch simulation time in testbench
-        self.regexp_patch(self.run_tb, "^\.tran (\d*)ps (.*)", f".tran \\1ps {self.time}")
+        self.regexp_patch(self.run_tb, r"^\.tran (\d*)ps (.*)", f".tran \\1ps {self.time}")
 
     def run_xyce_sim(self):
         """

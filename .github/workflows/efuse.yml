@@ -1,0 +1,13 @@
+name: Run eFuse compiler in Docker
+description: Run eFuse aray creation & verification in IIC-OSIC-TOOLS container.
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: hpretl/iic-osic-tools:2025.07.pre1
+    steps:
+        - name: Check out repository code
+          uses: actions/checkout@v4
+        - name: Generate 16x1 eFuse array
+          run: bash -c ". $HOME/.bashrc && cd ${{ github.workspace }} && PDK=gf180mcuD ./efuse.py 16 1"
