@@ -24,4 +24,4 @@ jobs:
             - name: Check out repository code
               uses: actions/checkout@v4
             - name: Generate 16x1 eFuse array
-              run: bash -c ". $HOME/.bashrc && cd ${{ github.workspace }} && PDK=gf180mcuD ./efuse.py 16 1"
+              run: bash -c ". /headless/.bashrc && PDK=gf180mcuD ./efuse.py 16 1"
