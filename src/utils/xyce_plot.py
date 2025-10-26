@@ -8,6 +8,8 @@ if len(sys.argv) < 2:
     print("Usage: ", sys.argv[0], "xyce_output")
     sys.exit(1)
 
+hide = len(sys.argv) > 2
+
 fname = sys.argv[1]
 
 f = open(fname, 'r')
@@ -39,6 +41,9 @@ for i in range(len(llines)):
     llines[i].set_picker(True)
     llines[i].set_pickradius(8)
     graphsd[llines[i]] = graphs[i]
+    if hide:
+        llines[i].set_visible(False)
+        graphsd[llines[i]][0].set_visible(False)
 
 def on_pick(event):
     legend = event.artist

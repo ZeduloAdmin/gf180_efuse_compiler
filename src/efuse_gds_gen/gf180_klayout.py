@@ -110,7 +110,7 @@ class CellGf180mcu():
         """
         Move cell origin to zero.
         """
-        self.cell = self.cell.transform_into(db.Trans(-self.cell.bbox().p1))
+        self.cell = self.cell.transform(db.Trans(-self.cell.bbox().p1))
 
     def clear_labels(self):
         """

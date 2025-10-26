@@ -13,9 +13,11 @@ def write_magic_ports(filename : str, ports : str):
             if p.strip():
                 print(f"""port {{{p}}} index {i}""", file=f)
             
-def subcircuit(name : str, ports : str, body : str) -> str:
+def subcircuit(name : str, ports : str, body : str, params : str = "") -> str:
+    if params:
+        params = "PARAMS: " + params
     return f"""
-.subckt {name} {ports}
+.subckt {name} {ports} {params}
 {body}
 .ends
     """
@@ -28,7 +30,7 @@ def efuse_bitline(n_fuses : int, device_naming : list) -> str:
     write_magic_ports("efuse_bitline_ports.tcl", bitline_ports)
     body = ""
     for i in range(n_fuses):
-        body += f"X{i} VSS BIT_SEL[{i}] bitline efuse_bitcell\n"
+        body += f"X{i} VSS VDD BIT_SEL[{i}] bitline efuse_bitcell NUM={{LNUM*1000+{i}}}\n"
         
     # add programming PMOS
     # !actually currently it's 4 fingers, not 2 fingers x2, but there is no such model
@@ -37,9 +39,9 @@ def efuse_bitline(n_fuses : int, device_naming : list) -> str:
     body += f"""{device_naming[0]}1 bitline COL_PROG_N VDD VDD p{device_naming[1]} L=0.50u W=76.5u nf=2"""
     body += "\n"
     # add sensamp
-    body += "Xsense VDD PRESET_N OUT SENSE VSS bitline efuse_senseamp"
+    body += "Xsense VSS VDD PRESET_N OUT SENSE bitline efuse_senseamp"
     
-    return subcircuit("efuse_bitline", bitline_ports, body)
+    return subcircuit("efuse_bitline", bitline_ports, body, "LNUM=0")
 
 def efuse_array(cellname : str, word_width : int, n_fuses : int) -> str:
     common_ports = "VSS VDD SENSE PRESET_N " + "".join([f'BIT_SEL[{j}] ' for j in range(n_fuses)])
@@ -48,7 +50,7 @@ def efuse_array(cellname : str, word_width : int, n_fuses : int) -> str:
     body = ""
     for i in range(word_width):
         bitline_ports = f"COL_PROG_N[{i}] OUT[{i}] "
-        body += f"X0_{i} {common_ports} {bitline_ports} efuse_bitline\n"
+        body += f"X{i} {common_ports} {bitline_ports} efuse_bitline LNUM={i}\n"
         array_ports += bitline_ports
 
     write_magic_ports("efuse_array_ports.tcl", array_ports)
@@ -77,16 +79,17 @@ def generate_netlist(cellname : str, filename : str, nwords : int, word_width : 
 {device_naming[0]}11 VDD I ZN VNW p{device_naming[1]} W=1.22e-06 L=5e-07
 .ENDS
 
-.subckt efuse_bitcell VSS SELECT ANODE
-X0 ANODE CATHODE efuse
+.subckt efuse_bitcell VSS VDD SELECT ANODE PARAMS: NUM=-1
+X0 ANODE CATHODE efuse NUM={{NUM}}
 {device_naming[0]}1 CATHODE SELECT VSS VSS n{device_naming[1]} L=0.60u W=30.5u
+
 .ends
 
-.subckt efuse_senseamp  VDD PRESET_N OUT SENSE VSS FUSE
+.subckt efuse_senseamp VSS VDD PRESET_N OUT SENSE FUSE
 {device_naming[0]}2 net1 PRESET_N VDD VDD p{device_naming[1]} L=0.5u W=2.44u nf=2
-x1 net2 OUT VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
-x2 net1 net2 VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
-x3 net2 net1 VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
+X1 net2 OUT VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
+X2 net1 net2 VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
+X3 net2 net1 VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
 {device_naming[0]}1 net1 SENSE FUSE VSS n{device_naming[1]} L=0.60u W=0.82u
 .ends
 
@@ -94,6 +97,7 @@ x3 net2 net1 VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
 {efuse_array(cellname, word_width, nwords)[0]}
 .end
     """
+
     with open(filename, "w") as f:
         f.write(netlist)
 
@@ -110,6 +114,7 @@ def generate_xyce_test(cellname : str, filename : str, spice_name : str, xyce_mo
     array_ports = efuse_array(cellname, word_width, nwords)[1]
     netlist = f"""* Xyce testbench for {cellname}
 .option TEMP=25.0
+.include "blown.map"
 
 {constant_driver("VSS", 0)}
 {constant_driver("VDD", vdd)}
@@ -117,8 +122,9 @@ def generate_xyce_test(cellname : str, filename : str, spice_name : str, xyce_mo
 .lib "{xyce_models_path}/design.xyce" typical
 .lib "{xyce_models_path}/sm141064.xyce" typical
 
-.SUBCKT efuse ANODE CATHODE PARAMS: PBLOW=0
-Rfuse ANODE CATHODE R='200*(1-PBLOW) + 10000*PBLOW'
+.SUBCKT efuse ANODE CATHODE PARAMS: PBLOW=0 NUM=-1
+.PARAM BLOWN='IF(NUM<0 , PBLOW, BLOWN_MAP(NUM))'
+Rfuse ANODE CATHODE R='200*(1-BLOWN) + 10000*BLOWN'
 .ENDS efuse
 
 .include {spice_name}

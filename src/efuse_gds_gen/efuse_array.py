@@ -373,7 +373,9 @@ class EfuseArray(CellGf180mcu):
         it.min_depth = 1
         for t in it.each():
             shape = t.shape()
-            shape.delete()        
+            shape.delete()  
+
+        self.zero_origin()
         
 
 def create_efuse_array(layout : PathLike | str = "efuse_array.gds", cellname : str = "efuse_array", nwords : int = 32, word_width : int = 2, flat : bool = False):

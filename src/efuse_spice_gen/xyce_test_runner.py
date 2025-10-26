@@ -217,6 +217,17 @@ class XyceTestRunner:
             word += self.volt_to_digital(f"{bus}[{i}]") << i
         assert (word == expected), f"Word read from eFuse in simulation differs from expected in test {self.test_name}!"
 
+    def write_table_include(self, fname : str, table : dict):
+        """
+        Write Xyce-format include containing a table for single parameter dependedn on other parameter.
+        Quiet ugly, but tablefile supports only time parameter for some reason.
+        """
+        with open(fname, "w") as f:
+            f.write(".PARAM BLOWN_MAP(X)='table(X\n")
+            for i in sorted(table.items()):
+                f.write(f"+, {i[0]}, {i[1]}\n")
+            f.write("+)'")
+
     def get_max_currents(self):
         """
         Get maximum current value for each registered current probe.

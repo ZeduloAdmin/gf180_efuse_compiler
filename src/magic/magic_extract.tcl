@@ -11,11 +11,10 @@ select top cell
 
 # flatten, cause PEX works incorrectly for hierarchical gds 
 # and it's simplier to run tests on flat netlists
-cellname rename $cell tmp
-load tmp
 set flat_cell ${cell}_flat
 flatten $flat_cell
 load $flat_cell
+cellname delete $cell
 cellname rename $flat_cell $cell
 load $cell
 select top cell
@@ -27,15 +26,12 @@ source efuse_array_ports.tcl
 if {$do_pex == 1} {
     extract do all
     extract warn all
-    #extract unique
     extract do length
     extract all
 
     ext2sim labels on
     ext2sim
     extresist simplify off
-    #extresist lumped off
-    #extresist tolerance 0.01
     extresist all
 
     ext2spice cthresh 0.01fF
@@ -44,7 +40,6 @@ if {$do_pex == 1} {
     ext2spice scale off
     ext2spice hierarchy on
     ext2spice resistor tee on
-    #ext2spice short resistor
     ext2spice subcircuit descend on
 
     ext2spice extresist on

@@ -23,24 +23,36 @@ class EfuseFlow:
     """
     eFuse array creation & verification flow.
     """
-    def __init__(self, nwords : int, word_width : int, root_dir : Path, xyce_netlist : str, ncpus : int):
+    def __init__(self, nwords : int, word_width : int, root_dir : Path, xyce_netlist : str, ncpus : int, skip_drclvs : bool, verbose : bool):
         self.nwords = nwords
         self.word_width = word_width
         self.name = f"efuse_array_{nwords}x{word_width}"
         self.ncpus = ncpus
         self.xyce_netlist = xyce_netlist.lower()
+        self.skip_checks = skip_drclvs
 
         self.root_dir = root_dir
         self.scripts_dir = root_dir / "src"
         self.release_dir = root_dir / "macros" / self.name
         rundir = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         self.run_dir = root_dir / "runs"
-        self.run_dir = root_dir / "runs" / rundir
+        self.last_link = self.run_dir / "last"
+        self.run_dir = self.run_dir / rundir
         os.makedirs(self.run_dir, exist_ok=True)
+        try:
+            os.unlink(self.last_link)
+        except FileNotFoundError:
+            pass
+        os.symlink(self.run_dir, self.last_link)
+
 
         # setup logging
+        if verbose:
+            logging_level = logging.DEBUG
+        else:
+            logging_level = logging.INFO
         logging.basicConfig(
-            level=logging.INFO,
+            level=logging_level,
             handlers=[
                 logging.FileHandler(self.run_dir / "run.log"),
                 logging.StreamHandler()
@@ -103,7 +115,7 @@ class EfuseFlow:
             logging.warning(f"PDK_ROOT and/or PDK environment variables are not set, assuming GF180MCU PDK at: {os.environ['PDK_ROOT']}/{os.environ['PDK']}")
         
         self.pdk_path = Path(os.environ['PDK_ROOT']) / os.environ['PDK']
-        if not Path.is_dir(self.pdk_path/"libs.tech/klayout/drc"):
+        if not Path.is_dir(self.pdk_path/"libs.tech/klayout/tech"):
             self.panic(f"PDK not found at {self.pdk_path}")
             sys.exit(1)
 
@@ -115,7 +127,8 @@ class EfuseFlow:
         # check for tools in path
         self.check_in_path(["klayout", "-b", "-v"])
         self.check_in_path(["magic", "-d", "null", "--version"])
-        self.check_in_path(["Xyce", "-v"])
+        if self.xyce_netlist != "none":
+            self.check_in_path(["Xyce", "-v"])
 
     def generate_gds_lef(self):
         """
@@ -177,12 +190,12 @@ class EfuseFlow:
 
         logging.info("GDS is LVS clean.")
 
-    def run_xyce_test(self, name : str, netlist : str):
+    def run_xyce_test(self, name : str, netlist : str, is_flat : bool = True):
         """
         Xyce test helper.
         """
         logging.info(f"Running tests for {name} netlist...")
-        test = EfuseArrayTest(self.nwords, self.word_width, self.tb_name, netlist, self.spice_name, 5.0, self.ncpus)
+        test = EfuseArrayTest(self.nwords, self.word_width, self.tb_name, netlist, self.spice_name, is_flat, 5.0, self.ncpus)
         if not test.run_tests():
             self.panic("Xyce test failed, stopping.")
 
@@ -194,6 +207,8 @@ class EfuseFlow:
             return
 
         logging.info("Running tests in Xyce simulation...")
+        if self.xyce_netlist in ["schematic", "all"]:
+            self.run_xyce_test("schematic", self.spice_name, False)
         if self.xyce_netlist in ["extracted", "all"]:
             self.run_xyce_test("extracted", self.ext_netlist)
         if self.xyce_netlist in ["pex", "all"]:
@@ -231,7 +246,8 @@ class EfuseFlow:
 
         self.magic_extraction()
 
-        self.klayout_checks()
+        if not self.skip_checks:
+            self.klayout_checks()
 
         self.xyce_tests()
 
@@ -247,8 +263,10 @@ def main():
     parser = argparse.ArgumentParser(description = "A script to generate and verify eFuse array targeting GF180MCU technology.")
     parser.add_argument("number_of_words", type = int,      help = "Number of words in eFuse array.")
     parser.add_argument("word_width", type = int,           help = "Width of word in eFuse array.")
-    parser.add_argument("--ncpus", type = int, default = 1, help = "Number of CPUs to use in KLayout & Xyce, default = 1.")
-    parser.add_argument("--xyce_netlist", type = str, default = "pex", choices=["none", "extracted", "pex", "all"],
+    parser.add_argument("--ncpus", type = int, default = 1, help = "Number of CPU threads to use in KLayout & Xyce, default = 1.")
+    parser.add_argument("--skip-drclvs", action="store_true" , help = "Skip DRC & LVS checks.")
+    parser.add_argument("--verbose", action="store_true" , help = "Debug level output verbosity.")
+    parser.add_argument("--xyce-netlist", type = str, default = "pex", choices=["none", "schematic", "extracted", "pex", "all"],
         help = "Run Xyce tests with specified netlist, default = pex."
     )
     args = parser.parse_args()
@@ -256,7 +274,7 @@ def main():
     root_dir = Path(__file__).parent.absolute() 
     
     # run the flow
-    EfuseFlow(args.number_of_words, args.word_width, root_dir, args.xyce_netlist, args.ncpus).run_flow()
+    EfuseFlow(args.number_of_words, args.word_width, root_dir, args.xyce_netlist, args.ncpus, args.skip_drclvs, args.verbose).run_flow()
     
     
 if __name__ == '__main__':
