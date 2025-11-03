@@ -5,6 +5,8 @@
 
 import os
 import sys
+import json
+from pathlib import Path
 
 def write_magic_ports(filename : str, ports : str):
     port_list = ports.split(" ")
@@ -33,40 +35,62 @@ def efuse_bitline(n_fuses : int, device_naming : list) -> str:
         body += f"X{i} VSS VDD BIT_SEL[{i}] bitline efuse_bitcell NUM={{LNUM*1000+{i}}}\n"
         
     # add programming PMOS
-    # !actually currently it's 4 fingers, not 2 fingers x2, but there is no such model
-    body += f"""{device_naming[0]}0 bitline COL_PROG_N VDD VDD p{device_naming[1]} L=0.50u W=76.5u nf=2"""
+    # ! actually currently it's 4 fingers W=38.25 PMOS, not 2x W=76.5, but there is no such model and LVS is bad with fingers in SPICE !
+    body += f"""{device_naming[0]}0 bitline COL_PROG_N VDD VDD p{device_naming[1]} L=0.50u W=76.5u nf=1"""
     body += "\n"
-    body += f"""{device_naming[0]}1 bitline COL_PROG_N VDD VDD p{device_naming[1]} L=0.50u W=76.5u nf=2"""
+    body += f"""{device_naming[0]}1 bitline COL_PROG_N VDD VDD p{device_naming[1]} L=0.50u W=76.5u nf=1"""
     body += "\n"
     # add sensamp
-    body += "Xsense VSS VDD PRESET_N OUT SENSE bitline efuse_senseamp"
+    body += "Xsense VSS VSS VDD PRESET_N OUT SENSE bitline efuse_senseamp"
     
     return subcircuit("efuse_bitline", bitline_ports, body, "LNUM=0")
 
-def efuse_array(cellname : str, word_width : int, n_fuses : int) -> str:
+def efuse_array(cellname : str, word_width : int, n_fuses : int, add_cells : str = "") -> str:
+
+    # buffered bit sel
+    # common_ports = "VSS VDD SENSE PRESET_N "
+    # sel_ports = "".join([f'BIT_SEL_BUF[{j}] ' for j in range(n_fuses)])
+    # array_ports = common_ports + "".join([f'BIT_SEL[{j}] ' for j in range(n_fuses)])
+
+    # unbuffered bit sel
     common_ports = "VSS VDD SENSE PRESET_N " + "".join([f'BIT_SEL[{j}] ' for j in range(n_fuses)])
     array_ports = common_ports
+    sel_ports = ""
 
-    body = ""
+    body = add_cells
+
+    # for i in range(n_fuses):
+    #     body += f"Xsbuf{i} BIT_SEL[{i}] BIT_SEL_BUF[{i}] VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__buf_1\n"
+
     for i in range(word_width):
         bitline_ports = f"COL_PROG_N[{i}] OUT[{i}] "
-        body += f"X{i} {common_ports} {bitline_ports} efuse_bitline LNUM={i}\n"
+        body += f"X{i} {common_ports} {sel_ports} {bitline_ports} efuse_bitline LNUM={i}\n"
         array_ports += bitline_ports
 
     write_magic_ports("efuse_array_ports.tcl", array_ports)
     
     return subcircuit(cellname, array_ports, body), array_ports
 
-def generate_netlist(cellname : str, filename : str, nwords : int, word_width : int, klayout_lvs : bool = False):
+def generate_netlist(cellname : str, filename : str, nwords : int, word_width : int, klayout_lvs : bool = False, add_cells_dict : dict = {}):
 
-    device_naming = ["X", "fet_06v0"]
+    device_naming = ["X", "fet_06v0", "X0 ANODE CATHODE efuse NUM={NUM}"]
         
     if klayout_lvs:
         device_naming[0] = "M"
-        device_naming[1] = "mos_5p0"
-        
+        device_naming[1] = "fet_05v0"
+        device_naming[2] = "Rfuse ANODE CATHODE efuse R=200"
+
+    # generate additional filler, cap & cap cells
+    add_cells = ""
+    acnt = 0
+    for c in add_cells_dict:
+        if all(x not in c for x in ["filltie", "endcap"]):
+            for i in range(add_cells_dict[c]):
+                add_cells += f"Xfill{acnt} VDD VDD VSS VSS {c}\n"
+                acnt += 1
+                
     netlist = f"""* eFuse array netlist with word_width={word_width}, nwords={nwords}
-    
+
 .SUBCKT gf180mcu_fd_sc_mcu7t5v0__inv_1 I ZN VDD VNW VPW VSS
 {device_naming[0]}0 ZN I VSS VPW n{device_naming[1]} W=8.2e-07 L=6e-07  
 {device_naming[0]}1 ZN I VDD VNW p{device_naming[1]} W=1.22e-06 L=5e-07
@@ -79,22 +103,26 @@ def generate_netlist(cellname : str, filename : str, nwords : int, word_width : 
 {device_naming[0]}11 VDD I ZN VNW p{device_naming[1]} W=1.22e-06 L=5e-07
 .ENDS
 
-.subckt efuse_bitcell VSS VDD SELECT ANODE PARAMS: NUM=-1
-X0 ANODE CATHODE efuse NUM={{NUM}}
-{device_naming[0]}1 CATHODE SELECT VSS VSS n{device_naming[1]} L=0.60u W=30.5u
+.SUBCKT gf180mcu_fd_sc_mcu7t5v0__fillcap_4 VDD VNW VPW VSS
+{device_naming[0]}17 net_1 net_0 VSS VPW n{device_naming[1]} W=8.2e-07 L=1e-06
+{device_naming[0]}19 VDD net_1 net_0 VNW p{device_naming[1]} W=1.22e-06 L=1e-06
+.ENDS
 
+.subckt efuse_bitcell VSS VDD SELECT ANODE PARAMS: NUM=-1
+{device_naming[2]}
+{device_naming[0]}1 CATHODE SELECT VSS VSS n{device_naming[1]} L=0.60u W=30.5u
 .ends
 
-.subckt efuse_senseamp VSS VDD PRESET_N OUT SENSE FUSE
+.subckt efuse_senseamp VSS VNW VDD PRESET_N OUT SENSE FUSE
 {device_naming[0]}2 net1 PRESET_N VDD VDD p{device_naming[1]} L=0.5u W=2.44u nf=2
-X1 net2 OUT VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
-X2 net1 net2 VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
-X3 net2 net1 VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__inv_1
+X1 net2 OUT VDD VDD VSS VNW gf180mcu_fd_sc_mcu7t5v0__inv_1
+X2 net1 net2 VDD VDD VSS VNW gf180mcu_fd_sc_mcu7t5v0__inv_1
+X3 net2 net1 VDD VDD VSS VNW gf180mcu_fd_sc_mcu7t5v0__inv_1
 {device_naming[0]}1 net1 SENSE FUSE VSS n{device_naming[1]} L=0.60u W=0.82u
 .ends
 
 {efuse_bitline(nwords, device_naming)}
-{efuse_array(cellname, word_width, nwords)[0]}
+{efuse_array(cellname, word_width, nwords, add_cells)[0]}
 .end
     """
 
@@ -140,13 +168,12 @@ Xefuse_array {array_ports} {cellname}
 .tran 10ps {time}
 
 .print tran format=csv file={filename}.csv V(PRESET_N) V(SENSE) V(OUT*) V(COL_PROG_N*) V(BIT_SEL*) I(Xefuse_array:X*:RFUSE)
-* I(VVDD) V(BIT_SEL*)
     """
     
     with open(filename, "w") as f:
         f.write(netlist)
 
-def generate_spices(base_name : str, pdk_path : str, nwords : int, word_width : int, time : float = 100e-9):
+def generate_spices(base_name : str, pdk_path : str, nwords : int, word_width : int, time : float = 100e-9, add_cells : Path | str = ""):
     """
     Generate a basic set of SPICE files - simulation & LVS netlists and Xyce test wrapper.
     """
@@ -156,8 +183,14 @@ def generate_spices(base_name : str, pdk_path : str, nwords : int, word_width : 
     lvs_name = base_name + ".klvs.spice"
     tb_name = base_name + "_test.xyce"
 
+    if add_cells:
+        with open(add_cells, "r") as f:
+            add_cells_dict = json.load(f)
+    else:
+        add_cells_dict = {}
+
     generate_netlist(base_name, spice_name, nwords, word_width, False)
-    generate_netlist(base_name, lvs_name, nwords, word_width, True)
+    generate_netlist(base_name, lvs_name, nwords, word_width, True, add_cells_dict)
     generate_xyce_test(base_name, tb_name, spice_name, xyce_models_path, nwords, word_width, time)
 
     return spice_name, lvs_name, tb_name

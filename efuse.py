@@ -98,10 +98,12 @@ class EfuseFlow:
         Run helper.
         """
         try:
-            sp.run(args, stdout = sp.PIPE, stderr = sp.STDOUT, check = True)
+            out = sp.run(args, stdout = sp.PIPE, stderr = sp.STDOUT, check = True)
+            with open(log, "a") as f:
+                f.write(out.stdout.decode("utf-8"))
         except sp.CalledProcessError as e:
             log = Path(log).absolute()
-            with open(log, "w") as err:
+            with open(log, "a") as err:
                 print(e.stdout.decode("utf-8"), file=err)
             self.panic(f"{add_msg} Please see {log} .")
 
@@ -135,8 +137,9 @@ class EfuseFlow:
         Generate eFuse array GDS with KLayout.
         """
         self.gds_name = Path(self.name + ".gds").absolute()
+        self.add_cells_json = Path("add_cells.json").absolute()
         logging.info("Generating eFuse array GDS file... ")
-        create_efuse_array(self.gds_name, self.name, self.nwords, self.word_width)
+        create_efuse_array(self.gds_name, self.name, self.nwords, self.word_width, add_cells = self.add_cells_json)
         logging.info(f"eFuse array cell written to {self.gds_name.name}.")
 
         logging.info("Generating eFuse array LEF file... ")
@@ -149,7 +152,7 @@ class EfuseFlow:
         Generate SPICE netlists & test wrappers.
         """
         logging.info("Generating spice netlists for LVS & simulation... ")
-        ret = generate_spices(self.name, self.pdk_path, self.nwords, self.word_width)
+        ret = generate_spices(self.name, self.pdk_path, self.nwords, self.word_width, add_cells = self.add_cells_json)
         self.spice_name = ret[0]
         self.klvs_name = ret[1]
         self.tb_name = ret[2]
@@ -176,18 +179,17 @@ class EfuseFlow:
         self.run(
             ["python3", self.pdk_path / "libs.tech/klayout/drc/run_drc.py", f"--path={self.gds_name}", 
                 f"--variant={str(self.pdk_path)[-1]}", f"--topcell={self.name}", f"--mp={self.ncpus}"],
-            "drc.err", "DRC run failed, or GDS is not DRC clean"
+            "drc.log", "DRC run failed, or GDS is not DRC clean"
         )
-
         logging.info("GDS is DRC clean.")
         
         logging.info("Performing KLayout LVS...")
         self.run(
-            ["python3", self.pdk_path / "libs.tech/klayout/lvs/run_lvs.py", f"--layout={self.gds_name}", 
+            ["python3", self.pdk_path / "libs.tech/klayout/lvs/run_lvs.py", f"--layout={self.gds_name}", "--lvs_sub=VSS", "--schematic_simplify",
                 f"--variant={str(self.pdk_path)[-1]}", f"--topcell={self.name}", f"--netlist={self.klvs_name}", f"--thr={self.ncpus}"],
-            "lvs.err", "LVS run failed, or GDS does not conform to schematics."
+            "lvs.log", "LVS run failed."
         )
-
+        self.run(["grep", "Congratulations! Netlists match", "lvs.log"], "lvs.err", "GDS does not conform to schematics!")
         logging.info("GDS is LVS clean.")
 
     def run_xyce_test(self, name : str, netlist : str, is_flat : bool = True):

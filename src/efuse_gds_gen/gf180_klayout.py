@@ -2,6 +2,8 @@
 # Helper classes to generate GDS for GF180 with KLayout
 #
 
+import os
+from pathlib import Path
 from klayout import db
 
 # Tech parameters, all sizes in nm
@@ -23,6 +25,8 @@ M2_DIST             = 280
 
 DG_POLY_ENC         = 400
 COMP_CONT_DIST      = 170
+
+MAX_TAP_DIST        = 20000
 
 class LayoutGf180mcu():
     """
@@ -59,6 +63,8 @@ class LayoutGf180mcu():
         self.poly2 = layout.layer(30, 0)
         self.dualgate = layout.layer(55, 0)
         self.nplus = layout.layer(32, 0)
+        self.pr_bndry = layout.layer(0, 0)
+        self.efuse_mk = layout.layer(80, 5)
         
         self.grid = 5
         
@@ -82,17 +88,26 @@ class CellGf180mcu():
     """
     Small wrapper for KLayout Layout class with shortcuts for GF180MCU.
     """
-    def __init__(self, layout_wrapper : LayoutGf180mcu, parent = None, name : str = ""):
+    def __init__(self, layout_wrapper : LayoutGf180mcu, parent = None, name : str = "", single_cell : bool = False):
         self.layout = layout_wrapper.layout
         self.l = layout_wrapper
         
         if type(parent) is db.Cell:
             self.cell = parent
-        elif type(parent) is str:    
+        elif (isinstance(parent, str)) or (isinstance(parent, Path)):    
             assert(name)
-            self.layout.read(parent, layout_wrapper.llo)
-            self.cell = self.layout.cell(name)
-            self.name = name
+            if single_cell:
+                gds_layout = db.Layout()
+                gds_layout.read(str(parent))
+                read_cell = gds_layout.cell(name)
+                index = self.layout.add_cell(name)
+                self.cell = self.layout.cell(index)
+                self.name = name
+                self.cell.copy_tree(read_cell)
+            else:
+                self.layout.read(str(parent), layout_wrapper.llo)
+                self.cell = self.layout.cell(name)
+                self.name = name
         else:
             # create new cell
             assert(name)
@@ -259,3 +274,40 @@ class CellGf180mcu():
                         boxes.append(b)
         return boxes
         
+class StdCellGf180mcu(CellGf180mcu):
+    """
+    Standard cell helper.
+    """
+    def __init__(self, l : LayoutGf180mcu, cell_name : str):
+        super().__init__(l, parent = Path(os.environ['PDK_ROOT']) / os.environ['PDK'] / 
+            "libs.ref/gf180mcu_fd_sc_mcu7t5v0/gds/gf180mcu_fd_sc_mcu7t5v0.gds", name = cell_name, single_cell = True)
+        self.zero_origin()
+        self.wdt = self.bbox(l.metal1).width()
+
+class Endcap(StdCellGf180mcu):
+    """
+    Endcap.
+    """
+    def __init__(self, l : LayoutGf180mcu):
+        super().__init__(l, "gf180mcu_fd_sc_mcu7t5v0__endcap")
+
+class FillTie(StdCellGf180mcu):
+    """
+    Filler with well tap.
+    """
+    def __init__(self, l : LayoutGf180mcu):
+        super().__init__(l, "gf180mcu_fd_sc_mcu7t5v0__filltie")
+
+class FillCap(StdCellGf180mcu):
+    """
+    Filler with capacitor.
+    """
+    def __init__(self, l : LayoutGf180mcu):
+        super().__init__(l, "gf180mcu_fd_sc_mcu7t5v0__fillcap_4")
+
+class Inv1(StdCellGf180mcu):
+    """
+    Smallest inverter.
+    """
+    def __init__(self, l : LayoutGf180mcu):
+        super().__init__(l, "gf180mcu_fd_sc_mcu7t5v0__inv_1")
