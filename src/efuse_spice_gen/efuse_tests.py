@@ -4,13 +4,14 @@ import random
 import logging
 from .xyce_test_runner import XyceTestRunner
 
-PRESET_TIME         = 10e-9
+TRANSITION_TIME     = 0.5e-9
+PRESET_TIME         = 1e-9
 BITSEL_TIME         = 10e-9
-SENSE_TIME          = 30e-9
+SENSE_TIME          = 10e-9
 PROG_TO_SEL_TIME    = 10e-9
 PROG_TIME           = 100e-9
 EFUSE_BLOW_CURRENT  = 12e-3
-EFUSE_SAFE_CURRENT  = 1e-3
+EFUSE_SAFE_CURRENT  = 1.5e-3
 
 class EfuseArrayTest(XyceTestRunner):
     """
@@ -22,7 +23,7 @@ class EfuseArrayTest(XyceTestRunner):
         self.max_word_val = 2**self.word_width - 1
         self.is_flat = is_flat
 
-        super().__init__(tb, netlist, uut_file, vdd, 1e-9, ncpus)
+        super().__init__(tb, netlist, uut_file, vdd, TRANSITION_TIME, ncpus)
         logging.getLogger(__name__)
 
         # create test memory array and empty blown map
@@ -54,12 +55,12 @@ class EfuseArrayTest(XyceTestRunner):
         """
         # create pwl data
         self.set(self.preset_n, False)
-        self.set(self.sense, True)
         self.wait_for(PRESET_TIME)
-        self.set(self.preset_n, True)
-        self.wait_for(BITSEL_TIME)
-        self.set(self.bit_sel, 1<<word_addr)
+        self.set(self.sense, True)
         self.wait_for(SENSE_TIME)
+        self.set(self.preset_n, True)
+        self.set(self.bit_sel, 1<<word_addr)
+        self.wait_for(BITSEL_TIME)
         self.set(self.sense, False)
         self.set(self.bit_sel, 0)
 

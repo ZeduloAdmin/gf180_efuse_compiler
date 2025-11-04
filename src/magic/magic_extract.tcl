@@ -52,5 +52,4 @@ if {$do_pex == 1} {
 
 ext2spice -F -f ngspice -o $::env(SPICE_NAME)
 
-# file rename -force "${cell}.spice" $::env(SPICE_NAME)
 exit

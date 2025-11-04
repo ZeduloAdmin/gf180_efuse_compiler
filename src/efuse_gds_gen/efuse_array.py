@@ -323,9 +323,7 @@ class EfuseBitline(CellGf180mcu):
         self.vss_sense = self.create_box(l.metal4, x - SENSE_POWER_WDT, bbox.p1.y, x, bbox.p2.y)
         self.create_text_p(l.metal4_label, self.vss_sense.center(), "VSS")
         self.pvia_inhibit = [bitwire_m2_up, bitwire_m2_down, bitwire_m2_sense]
-        # for m1 in vss_m1:
-        #     self.place_via_area_step(m1 & vss_sense, 1, 4, VIA_STEP, l.to_dbu(3.0), [bitwire_m2_up, bitwire_m2_down, bitwire_m2_sense], False)
-        
+
         # draw VDD stripes on M4
         self.vdd_m4 = []
         self.vdd_m1 = self.find_boxes_with_text(l.metal1, l.metal1_label, "VDD")
@@ -334,10 +332,6 @@ class EfuseBitline(CellGf180mcu):
             vdd = self.create_box(l.metal4, x, bbox.p1.y, x + w, bbox.p2.y)
             self.create_text_p(l.metal4_label, vdd.center(), "VDD")
             self.vdd_m4.append(vdd)
-        # self.vdd_inhibit = [bitwire_m2_up, bitwire_m2_down, bitwire_m2_sense]
-        # for m4 in vdd_m4:
-        #     for m1 in vdd_m1:
-        #         self.place_via_area_step(m1 & m4, 1, 4, VIA_STEP, l.to_dbu(3.0), [bitwire_m2_up, bitwire_m2_down, bitwire_m2_sense], False, True)
 
 class EfuseArray(CellGf180mcu):
     """
@@ -489,6 +483,9 @@ class EfuseArray(CellGf180mcu):
         for t in it.each():
             shape = t.shape()
             shape.delete()  
+
+        # mark whole array with PR_BNDRY
+        self.dup_box(l.pr_bndry, self.bbox())
 
         self.zero_origin()
         

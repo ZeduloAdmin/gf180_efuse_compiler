@@ -52,13 +52,13 @@ class LibrelaneRunner():
         os.chdir("librelane")
 
         with open("config.json", "w") as f:
-            json.dump(config)
+            json.dump(config, f)
         
         try:
             sp.run(["librelane", "config.json", "--pdk", os.environ["PDK"], "--pdk-root", os.environ["PDK_ROOT"], "--manual-pdk"],
                 stdout = sp.PIPE, stderr = sp.STDOUT, check = True)
         except sp.CalledProcessError as e:
-            logging.error("Librelane run failed!")
+            logging.error("Librelane run failed! " + e.stdout.decode("utf-8"))
 
         os.chdir(orig_wd)
 
