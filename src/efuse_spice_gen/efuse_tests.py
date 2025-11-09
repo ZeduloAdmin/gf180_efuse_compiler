@@ -74,13 +74,13 @@ class EfuseArrayTest(XyceTestRunner):
         Generate PWL sequence for eFuse write.
         """
         # create pwl data
-        self.set(self.sense, True) # perform sense to remove charge from bitline prior to writing
-        self.wait_for(SENSE_TIME)
-        self.set(self.sense, False)
+        # self.set(self.sense, True) # perform sense to remove charge from bitline prior to writing
+        # self.wait_for(SENSE_TIME)
+        # self.set(self.sense, False)
+        # self.wait_for(PROG_TO_SEL_TIME)
+        self.set(self.bit_sel, 1<<word_addr)
         self.wait_for(PROG_TO_SEL_TIME)
         self.set(self.col_prog_n, self.max_word_val - data)  # binary negated data
-        self.wait_for(PROG_TO_SEL_TIME)
-        self.set(self.bit_sel, 1<<word_addr)
         self.wait_for(PROG_TIME)
         self.set(self.bit_sel, 0)
         self.set(self.col_prog_n, self.max_word_val)

@@ -11,24 +11,28 @@ import logging
 from importlib import util as import_util
 from datetime import datetime
 from pathlib import Path
-from shutil import copy
+from shutil import copy, copytree
 import subprocess as sp
 
 from src.efuse_gds_gen.efuse_array import create_efuse_array
 from src.efuse_spice_gen.generate_spice import generate_spices
 from src.efuse_spice_gen.efuse_tests import EfuseArrayTest
 from src.magic.magic_wrapper import magic
+from src.digital.librelane import EfuseLibrelaneWb
 
 class EfuseFlow:
     """
     eFuse array creation & verification flow.
     """
-    def __init__(self, nwords : int, word_width : int, root_dir : Path, xyce_netlist : str, ncpus : int, skip_drclvs : bool, verbose : bool):
+    def __init__(self, nwords : int, word_width : int, root_dir : Path, 
+                    xyce_netlist : str, digital_wrapper : str, ncpus : int, 
+                    skip_drclvs : bool, verbose : bool):
         self.nwords = nwords
         self.word_width = word_width
         self.name = f"efuse_array_{nwords}x{word_width}"
         self.ncpus = ncpus
         self.xyce_netlist = xyce_netlist.lower()
+        self.digital_wrapper = digital_wrapper.lower()
         self.skip_checks = skip_drclvs
 
         self.root_dir = root_dir
@@ -86,21 +90,27 @@ class EfuseFlow:
         except Exception:
             EfuseFlow.panic(f"{cmd[0]} not found in PATH!")
 
-    def run_magic(self, script : str, args : dict = dict()):
+    def run_magic(self, script : str, args : dict = dict(), log = ""):
         """
         Magic call helper.
         """
-        args.update({"GDS" : self.gds_name, "CELL" : self.name, "MAGIC_SCRIPT_PATH" : self.scripts_dir / "magic"})
-        magic(self.scripts_dir / f"magic/{script}.tcl", args, f"{script}.log")
+        if "GDS" not in args:
+            args["GDS"] = self.gds_name
+        if "CELL" not in args:
+            args["CELL"] = self.name
+        if not log:
+            log = f"{script}.log"
+        args["MAGIC_SCRIPT_PATH"] = self.scripts_dir / "magic"
+        magic(self.scripts_dir / f"magic/{script}.tcl", args, log)
 
     def run(self, args : list, log : str, add_msg : str =""):
         """
         Run helper.
         """
         try:
-            out = sp.run(args, stdout = sp.PIPE, stderr = sp.STDOUT, check = True)
+            run = sp.run(args, stdout = sp.PIPE, stderr = sp.STDOUT, check = True)
             with open(log, "a") as f:
-                f.write(out.stdout.decode("utf-8"))
+                f.write(run.stdout.decode("utf-8"))
         except sp.CalledProcessError as e:
             log = Path(log).absolute()
             with open(log, "a") as err:
@@ -219,6 +229,29 @@ class EfuseFlow:
 
         logging.info("Xyce tests completed succesfully!")
 
+    def gen_digital_wrapper(self):
+        """
+        Create Librelane digital wrappers around eFuse blocks.
+        """
+
+        if self.digital_wrapper == "wishbone":
+            logging.info("Implementing Wishbone wrapper with Librelane...")
+
+            self.digital = EfuseLibrelaneWb(self.name, self.gds_name, self.lef_name, self.nwords, self.word_width)
+            self.digital.run()
+            if not self.digital.final:
+                self.panic("Wishbone wrapper generation failed!")
+
+            # generate better lef (needed if generated without power rings)
+            # self.run_magic("magic_lef", {"GDS" : self.digital.gds, "CELL" : self.digital.name, 
+            #     "LEF" : self.digital.lef, "HIDE" : "10"}, log = "digital_magic_lef.log")
+
+            self.digital_release_dir = self.release_dir / self.digital.name
+
+            logging.info("Wishbone wrapper generated successfully!")
+        else:
+            self.digital_release_dir = None
+
     def release_files(self):
         """
         Copy resulting files into macro folder.
@@ -230,8 +263,15 @@ class EfuseFlow:
         copy(self.spice_name, self.release_dir)
         copy(self.pex_netlist, self.release_dir)
 
+        if self.digital_release_dir:
+            os.makedirs(self.digital_release_dir, exist_ok=True)
+            copy(self.digital.gds, self.digital_release_dir)
+            copy(self.digital.lef, self.digital_release_dir)
+            copy(self.digital.nl,  self.digital_release_dir)
+            copy(self.digital.pnl, self.digital_release_dir)
+            copytree(self.digital.lib, self.digital_release_dir / "", dirs_exist_ok=True)
 
-    def run_flow(self):
+    def run_flow(self):        
         """
         Run all stages of the flow.
         """
@@ -253,6 +293,8 @@ class EfuseFlow:
 
         self.xyce_tests()
 
+        self.gen_digital_wrapper()
+
         self.release_files()
 
         logging.info("eFuse array generation completed successfully!")
@@ -271,12 +313,16 @@ def main():
     parser.add_argument("--xyce-netlist", type = str, default = "pex", choices=["none", "schematic", "extracted", "pex", "all"],
         help = "Run Xyce tests with specified netlist, default = pex."
     )
+    parser.add_argument("--digital-wrapper", type = str, default = "none", choices=["none", "wishbone"],
+        help = "Generate digital wrapper with Librelane, default = none."
+    )
     args = parser.parse_args()
     
     root_dir = Path(__file__).parent.absolute() 
     
     # run the flow
-    EfuseFlow(args.number_of_words, args.word_width, root_dir, args.xyce_netlist, args.ncpus, args.skip_drclvs, args.verbose).run_flow()
+    flow = EfuseFlow(args.number_of_words, args.word_width, root_dir, args.xyce_netlist, args.digital_wrapper, args.ncpus, args.skip_drclvs, args.verbose)
+    flow.run_flow()
     
     
 if __name__ == '__main__':

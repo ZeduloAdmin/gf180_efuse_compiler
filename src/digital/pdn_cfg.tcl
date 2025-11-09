@@ -116,3 +116,14 @@ if { $::env(FP_PDN_CORE_RING) == 1 } {
         throw APPLICATION "FP_PDN_CORE_RING cannot be used when FP_PDN_MULTILAYER is set to false."
     }
 }
+
+define_pdn_grid \
+    -macro \
+    -default \
+    -name macro \
+    -starts_with POWER \
+    -halo "$::env(FP_PDN_HORIZONTAL_HALO) $::env(FP_PDN_VERTICAL_HALO)"
+
+add_pdn_connect \
+    -grid macro \
+    -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"

@@ -1,7 +1,7 @@
 import logging
 import sys
 from os import environ, remove
-from subprocess import run, STDOUT, DEVNULL
+from subprocess import run, STDOUT, DEVNULL, CalledProcessError
 from pathlib import Path
 
 def magic(script : Path, args : dict, log : str):
@@ -23,7 +23,10 @@ def magic(script : Path, args : dict, log : str):
             stdin = DEVNULL
         )
         remove(tmp_script)
-    except Exception:
-        logging.error(f"Magic run failed, please check the logfile for more info {log}")
+    except CalledProcessError as e:
+        err = "magic.err"
+        with open(err, "w") as f:
+            f.write(e.stdout.decode("utf-8"))
+        logging.error(f"Magic run failed, please check logfiles {log} and {err} for more info")
         sys.exit(1)
     
