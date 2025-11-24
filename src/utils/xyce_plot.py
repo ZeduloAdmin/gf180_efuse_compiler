@@ -9,6 +9,8 @@ parser.add_argument("csv_file", type = str,      help = "CSV file to plot.")
 parser.add_argument("--hide", action="store_true" , help = "Start with all lines hidden.")
 parser.add_argument("--skip", type=str, nargs="+", help = "Columns containing these strings will not be plotted.")
 args = parser.parse_args()
+if not args.skip:
+    args.skip = []
 
 f = open(args.csv_file, 'r')
 index = f.readline()

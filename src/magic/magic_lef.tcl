@@ -8,7 +8,7 @@ if {[info exists ::env(LEF)]} {
 }
 
 #-toplayer
-set add_opts "-nomaster"
+set add_opts "-toplayer -nomaster"
 if {[info exists ::env(HIDE)]} {
     set add_opts "-hide ${::env(HIDE)}um $add_opts"
 } else {

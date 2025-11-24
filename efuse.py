@@ -269,7 +269,8 @@ class EfuseFlow:
             copy(self.digital.lef, self.digital_release_dir)
             copy(self.digital.nl,  self.digital_release_dir)
             copy(self.digital.pnl, self.digital_release_dir)
-            copytree(self.digital.lib, self.digital_release_dir / "", dirs_exist_ok=True)
+            copytree(self.digital.lib, self.digital_release_dir, dirs_exist_ok=True)
+            copytree(self.digital.sdf, self.digital_release_dir, dirs_exist_ok=True)
 
     def run_flow(self):        
         """

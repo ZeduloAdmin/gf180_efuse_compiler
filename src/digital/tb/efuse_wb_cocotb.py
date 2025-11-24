@@ -65,7 +65,7 @@ class EfuseWishboneTest:
         """
         t = random.randrange(SLEEP_PERIODS)
         if t:
-            await Timer(self.period * t)
+            await Timer(self.period * t, "ns")
 
     async def wb_read_write_test(self):
         """

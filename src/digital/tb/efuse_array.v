@@ -25,99 +25,100 @@ module `EFUSE_ARRAY_NAME #(
     output [WORD_WIDTH-1:0] OUT
 );
 
-localparam STATE_IDLE   = 0;
-localparam STATE_PRESET = 1;
-localparam STATE_SENSE  = 2;
-localparam STATE_WRITE  = 3;
+    localparam STATE_IDLE   = 0;
+    localparam STATE_PRESET = 1;
+    localparam STATE_SENSE  = 2;
+    localparam STATE_WRITE  = 3;
 
-// times in ns
-localparam MIN_PRESET_NS    = 5;
-localparam MIN_SENSE_NS     = 10;
-localparam MIN_WRITE_NS     = 1000;
+    // times in ns
+    localparam MIN_PRESET_NS    = 5;
+    localparam MIN_SENSE_NS     = 10;
+    localparam MIN_WRITE_NS     = 1000;
 
-reg [WORD_WIDTH-1:0] fuses [NWORDS-1:0];    // memory
+    reg [WORD_WIDTH-1:0] fuses [NWORDS-1:0];    // memory
 
-reg [WORD_WIDTH-1:0] out;
-reg [NWORDS-1:0] sel;
-reg [WORD_WIDTH-1:0] prog;
-reg preset = 1'b0;
-integer state = STATE_IDLE;
-reg [63:0] timestamp = 0;
+    reg [WORD_WIDTH-1:0] out;
+    reg [NWORDS-1:0] sel;
+    reg [WORD_WIDTH-1:0] prog;
+    reg preset = 1'b0;
+    integer state = STATE_IDLE;
+    reg [63:0] timestamp = 0;
 
-assign OUT = out;
+    assign OUT = out;
 
-// set array to all zeroes on start
-initial begin
-    for (i = 0; i < NWORDS; i = i + 1) begin
-        fuses[i] = {WORD_WIDTH{1'b0}};
+    // set array to all zeroes on start
+    initial begin
+        integer i;
+        for (i = 0; i < NWORDS; i = i + 1) begin
+            fuses[i] = {WORD_WIDTH{1'b0}};
+        end
     end
-end
 
-integer i, ones;
+    integer i, ones;
 
-always @(*) begin
+    always @(*) begin
 
-    ones = 0;
+        ones = 0;
 
-    if (PRESET_N === 1'b0) begin
-        // preset
-        `assert(state == STATE_IDLE || state == STATE_PRESET)
-        `assert(COL_PROG_N === {WORD_WIDTH{1'b1}})
-        if (state == STATE_IDLE)
-            timestamp = $time;
-        preset = 1'b1;
-        state = STATE_PRESET;
-    end else if (SENSE === 1'b1) begin
-        // read
-        `assert(preset == 1'b1)
-        `assert(state == STATE_IDLE || state == STATE_PRESET || state == STATE_SENSE)
-        `assert(COL_PROG_N === {WORD_WIDTH{1'b1}})
-        `assert(state == STATE_IDLE || sel == 0 || sel == BIT_SEL)
+        if (PRESET_N === 1'b0) begin
+            // preset
+            `assert(state == STATE_IDLE || state == STATE_PRESET)
+            `assert(COL_PROG_N === {WORD_WIDTH{1'b1}})
+            if (state == STATE_IDLE)
+                timestamp = $time;
+            preset = 1'b1;
+            state = STATE_PRESET;
+        end else if (SENSE === 1'b1) begin
+            // read
+            `assert(preset == 1'b1)
+            `assert(state == STATE_IDLE || state == STATE_PRESET || state == STATE_SENSE)
+            `assert(COL_PROG_N === {WORD_WIDTH{1'b1}})
+            `assert(state == STATE_IDLE || sel == 0 || sel == BIT_SEL)
 
-        if (BIT_SEL != 0 && sel == 0) begin
-            timestamp = $time;
+            if (BIT_SEL != 0 && sel == 0) begin
+                timestamp = $time;
+                for (i = 0; i < NWORDS; i = i + 1)
+                    if (BIT_SEL[i]) begin
+                        out = fuses[i];
+                        ones = ones + 1;
+                    end
+                `assert(ones == 1)
+            end
+            sel = BIT_SEL;
+            
+            state = STATE_SENSE;
+        end else if (COL_PROG_N != {WORD_WIDTH{1'b1}}) begin
+            // write
+            `assert(state == STATE_IDLE || state == STATE_WRITE)
+            `assert(state == STATE_IDLE || (prog == COL_PROG_N && sel == BIT_SEL))
+            sel = BIT_SEL;
+            prog = COL_PROG_N;
+            if (state == STATE_IDLE)
+                timestamp = $time;
+
             for (i = 0; i < NWORDS; i = i + 1)
                 if (BIT_SEL[i]) begin
-                    out = fuses[i];
+                    fuses[i] = fuses[i] | (~COL_PROG_N);
                     ones = ones + 1;
                 end
             `assert(ones == 1)
+
+            state = STATE_WRITE;
+        end else begin
+            // idle after active states, check signal hold times
+            if (state == STATE_PRESET)
+                `assert($time - timestamp >= MIN_PRESET_NS)
+            else if (state == STATE_WRITE)
+                `assert($time - timestamp >= MIN_WRITE_NS)
+            else if (state == STATE_SENSE) begin
+                `assert($time - timestamp >= MIN_SENSE_NS)
+                preset = 1'b0;
+            end 
+            
+            sel = BIT_SEL;
+            prog = COL_PROG_N;
+            state = STATE_IDLE;
         end
-        sel = BIT_SEL;
-        
-        state = STATE_SENSE;
-    end else if (COL_PROG_N != {WORD_WIDTH{1'b1}}) begin
-        // write
-        `assert(state == STATE_IDLE || state == STATE_WRITE)
-        `assert(state == STATE_IDLE || (prog == COL_PROG_N && sel == BIT_SEL))
-        sel = BIT_SEL;
-        prog = COL_PROG_N;
-        if (state == STATE_IDLE)
-            timestamp = $time;
-
-        for (i = 0; i < NWORDS; i = i + 1)
-            if (BIT_SEL[i]) begin
-                fuses[i] = fuses[i] | (~COL_PROG_N);
-                ones = ones + 1;
-            end
-        `assert(ones == 1)
-
-        state = STATE_WRITE;
-    end else begin
-        // idle after active states, check signal hold times
-        if (state == STATE_PRESET)
-            `assert($time - timestamp >= MIN_PRESET_NS)
-        else if (state == STATE_WRITE)
-            `assert($time - timestamp >= MIN_WRITE_NS)
-        else if (state == STATE_SENSE) begin
-            `assert($time - timestamp >= MIN_SENSE_NS)
-            preset = 1'b0;
-        end 
-        
-        sel = BIT_SEL;
-        prog = COL_PROG_N;
-        state = STATE_IDLE;
     end
-end
     
 endmodule

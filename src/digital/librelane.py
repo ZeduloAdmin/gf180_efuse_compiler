@@ -74,6 +74,7 @@ class LibrelaneRunner():
             self.nl  = self.final / "nl"  / f"{self.name}.nl.v"
             self.pnl = self.final / "pnl" / f"{self.name}.pnl.v"
             self.lib = self.final / "lib"
+            self.sdf = self.final / "sdf"
             
         except sp.CalledProcessError as e:
             logging.error(f"Librelane run failed! See {log} for log.")
@@ -143,11 +144,10 @@ class EfuseLibrelaneWb(LibrelaneRunner):
         # PnR
         self.config["PL_MAX_DISPLACEMENT_Y"] = 500
         self.config["RT_MAX_LAYER"] = "Metal4"
+        self.config["RUN_ANTENNA_REPAIR"] = False
         self.config["GRT_ALLOW_CONGESTION"] = True
         self.config["RSZ_DONT_TOUCH_RX"] = ".*_keep_cell"
-
-        # Other
-        # self.config["ERROR_ON_LVS_ERROR"] = False   # ! needed if there is no power connection !
+        self.config["ROUTING_OBSTRUCTIONS"] = [["Metal4", 0, 0, da[2], 30]]
 
         # efuse macro
         self.add_macro(macro, gds, lef, nl, {"efuse_array" : [70, cm + 5, "N"]})
