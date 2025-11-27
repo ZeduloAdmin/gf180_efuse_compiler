@@ -4,17 +4,13 @@
 
  `timescale 1ns/1ps
 
-`ifndef EFUSE_ARRAY_NAME
-`define EFUSE_ARRAY_NAME efuse_array
-`endif
-
 `define assert(statement) \
         if ($time > 1 && !(statement)) begin \
             $display("ASSERTION FAILED in %m on line %d", `__LINE__); \
             $finish; \
         end
 
-module `EFUSE_ARRAY_NAME #(
+module efuse_array #(
     parameter NWORDS = 16,
     parameter WORD_WIDTH = 1
 ) (

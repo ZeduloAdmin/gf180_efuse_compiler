@@ -1,10 +1,12 @@
-#!/usr/bin/env python3
 #
 # Librelane helper script for eFuse digital wrappers generation
 #
 
 import os
+import sys
+import re
 import json
+from math import log2
 import logging
 import subprocess as sp
 from pathlib import Path
@@ -25,6 +27,10 @@ class LibrelaneRunner():
 
         self.config["PRIMARY_GDSII_STREAMOUT_TOOL"] = "klayout"
         self.config["PL_KEEP_RESIZE_BELOW_OVERFLOW"] = 0
+
+        # following is to disable ports buffering & wire repair with dly cells as they degrade timing
+        self.cd = Path(__file__).parent.absolute()
+        self.config["PNR_EXCLUDED_CELL_FILE"] = str(self.cd / "pnr_exclude.cells")
 
         self.config["VDD_NETS"] = ["VDD"]
         self.config["GND_NETS"] = ["VSS"]
@@ -85,23 +91,58 @@ class LibrelaneRunner():
         os.chdir(orig_wd)
         return self.final
 
+    @staticmethod 
+    def panic(msg : str):
+        """
+        Exit with error message.
+        """
+        logging.error(msg)
+        sys.exit(1)
 
-class EfuseLibrelaneWb(LibrelaneRunner):
+
+class EfuseLibrelane(LibrelaneRunner):
     """
-    eFuse memory Wishbone wrapper implementation in Librelane
+    eFuse memory digital wrapper implementation in Librelane
     """
-    def __init__(self, macro : str, gds : str, lef : str, nwords : int, word_width : int):
+    def __init__(self, params : tuple, macro : str, gds : str, lef : str, bb : str, nwords : int, word_width : int):
 
         super().__init__()
 
-        cd = Path(__file__).parent.absolute()
+        # check requested parameters
+        if params[0] != "wishbone":
+            self.panic("Only Wishbone wrapper is supported for now.")
+            
+        supported_params = (
+            ("wishbone", 32, 8), ("wishbone", 64, 8), ("wishbone", 64, 32), ("wishbone", 128, 8), 
+            ("wishbone", 512, 32), ("wishbone", 1024, 32), 
+        )
+        if params not in supported_params:
+            logging.warning(f"Digital wrapper configuration {params} was not tested and might fail to generate. " +
+                f"Only the following configurations with largest fitting array geometry were confirmed to work: {supported_params}.")
 
+        if word_width != params[2]:
+            self.panic("Width of the digital wrapper interface should match array width.")
+
+        if int(2 ** log2(params[1])) != params[1]:
+            self.panic("Depth of the digital wrapper should be a power of 2.")
+
+        # determine sizes and paths
         self.macro = macro
         self.nwords = nwords
         self.word_width = word_width
-        nl = Path(f"{macro}.v").absolute()
 
-        self.gen_verilog_blackbox(nl)
+        if (params[1] % nwords) or (params[2] % word_width):
+            self.panic("Each digital wrapper dimmention should be a multiple of corresponding array size dimmention.")
+        n_arrays_depth = params[1] // nwords
+
+        # get array dimmensions from LEF
+        with open(lef) as f:
+            for l in f.readlines():
+                match = re.search("SIZE ((?:[0-9]*[.])?[0-9]+) BY ((?:[0-9]*[.])?[0-9]+)", l)
+                if match:
+                    array_x = float(match.group(1))
+                    array_y = float(match.group(2))
+                    break
 
         # skip some steps
         self.substitute_step("Verilator.Lint")
@@ -110,21 +151,34 @@ class EfuseLibrelaneWb(LibrelaneRunner):
         self.substitute_step("OpenROAD.IRDropReport")
 
         # set basic vars
-        self.name = f"efuse_wb_mem_{nwords}x{word_width}"
+        self.name = f"efuse_wb_mem_{params[1]}x{params[2]}"
         self.config["DESIGN_NAME"] = self.name
-        self.config["VERILOG_FILES"] = [ str(cd / "efuse_wb_mem.v") ]
-        self.config["VERILOG_DEFINES"] = [f"EFUSE_WBMEM_NAME={self.name}", f"EFUSE_ARRAY_NAME={macro}"]
-        self.config["SYNTH_PARAMETERS"] = [f"EFUSE_NWORDS={nwords}", f"EFUSE_WORD_WIDTH={word_width}"]
-        self.config["PNR_SDC_FILE"] = [ str(cd / "constraints.sdc") ]
+        self.config["VERILOG_FILES"] = [ str(self.cd / "efuse_wb_mem.v") ]
+        self.config["PNR_SDC_FILE"] = [ str(self.cd / "constraints.sdc") ]
         self.config["CLOCK_PORT"] = "wb_clk_i"
-        self.config["CLOCK_PERIOD"] = 20
+        self.config["CLOCK_PERIOD"] = 30
+
+        # set defines & parameters
+        mask = (params[2] // 8) if params[2] % 8 == 0 else 1
+
+        self.config["VERILOG_DEFINES"] = [f"EFUSE_WBMEM_NAME={self.name}", f"EFUSE_ARRAY_NAME={macro}"]
+        self.config["SYNTH_PARAMETERS"] = [
+            f"EFUSE_NWORDS={nwords}", 
+            f"EFUSE_WORD_WIDTH={word_width}", 
+            f"WB_DAT_WIDTH={params[2]}", 
+            f"WB_SEL_WIDTH={mask}",
+            f"WB_ADR_WIDTH={int(log2(params[1]))}",
+        ]
 
         # floorplan & PDN
         self.config["FP_SIZING"] = "absolute"
+        wb_area = 35000 # estimate
         cm = 10
-        self.config["DIE_AREA"] = da = [0, 0, 240, 350]
+        array_step_x = (int((wb_area / (n_arrays_depth * array_y))*10)/10) + 35
+
+        self.config["DIE_AREA"] = da = [0, 0, array_x*n_arrays_depth + array_step_x*n_arrays_depth, array_y+50]
         self.config["CORE_AREA"] = [da[0] + cm, da[1] + cm, da[2] - cm, da[3] - cm]
-        self.config["IO_PIN_ORDER_CFG"] = str(cd / "pin.cfg")
+        self.config["IO_PIN_ORDER_CFG"] = str(self.cd / "pin.cfg")
 
         self.config["FP_PDN_CORE_RING"] = True
         self.config["PDN_CORE_RING_VWIDTH"] = 2
@@ -139,33 +193,21 @@ class EfuseLibrelaneWb(LibrelaneRunner):
         self.config["PDN_VPITCH"] = 50
         self.config["PDN_VOFFSET"] = 5
         self.config["FP_MACRO_HORIZONTAL_HALO"] = 5
-        self.config["PDN_CFG"] = str(cd / "pdn_cfg.tcl")
+        self.config["FP_MACRO_VERTICAL_HALO"] = 3
+        self.config["PDN_CFG"] = str(self.cd / "pdn_cfg.tcl")
 
         # PnR
-        self.config["PL_MAX_DISPLACEMENT_Y"] = 500
+        self.config["PL_MAX_DISPLACEMENT_X"] = (array_x+array_step_x)*3
+        self.config["PL_MAX_DISPLACEMENT_Y"] = array_y
         self.config["RT_MAX_LAYER"] = "Metal4"
-        self.config["RUN_ANTENNA_REPAIR"] = False
         self.config["GRT_ALLOW_CONGESTION"] = True
         self.config["RSZ_DONT_TOUCH_RX"] = ".*_keep_cell"
-        self.config["ROUTING_OBSTRUCTIONS"] = [["Metal4", 0, 0, da[2], 30]]
+        self.config["DIODE_ON_PORTS"] = "in"
+        self.config["RUN_HEURISTIC_DIODE_INSERTION"] = True
+        self.config["HEURISTIC_ANTENNA_THRESHOLD"] = 300
 
         # efuse macro
-        self.add_macro(macro, gds, lef, nl, {"efuse_array" : [70, cm + 5, "N"]})
-
-    def gen_verilog_blackbox(self, fname : str):
-        verilog = f"""
-(* blackbox *)
-module {self.macro} #(
-    parameter NWORDS = {self.nwords},
-    parameter WORD_WIDTH = {self.word_width}
-) (
-    input  [NWORDS-1:0]     BIT_SEL,
-    input  [WORD_WIDTH-1:0] COL_PROG_N,
-    input                   PRESET_N,
-    input                   SENSE,
-    output [WORD_WIDTH-1:0] OUT
-);
-endmodule
-        """
-        with open(fname, "w") as f:
-            f.write(verilog)
+        array_inst = {}
+        for x in range(n_arrays_depth):
+            array_inst.update({f"efuse_gen_depth[{x}].efuse_array" : [10 + (array_x+array_step_x)*x , cm + 5, "N" if (x%2) else "FN"]})
+        self.add_macro(macro, gds, lef, bb, array_inst)

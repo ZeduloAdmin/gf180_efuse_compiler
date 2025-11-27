@@ -18,21 +18,22 @@ from src.efuse_gds_gen.efuse_array import create_efuse_array
 from src.efuse_spice_gen.generate_spice import generate_spices
 from src.efuse_spice_gen.efuse_tests import EfuseArrayTest
 from src.magic.magic_wrapper import magic
-from src.digital.librelane import EfuseLibrelaneWb
+from src.digital.librelane import EfuseLibrelane
+from src.digital.verilog import EfuseVerilog
 
 class EfuseFlow:
     """
     eFuse array creation & verification flow.
     """
     def __init__(self, nwords : int, word_width : int, root_dir : Path, 
-                    xyce_netlist : str, digital_wrapper : str, ncpus : int, 
+                    xyce_netlist : str, digital_wrapper : tuple, ncpus : int, 
                     skip_drclvs : bool, verbose : bool):
         self.nwords = nwords
         self.word_width = word_width
         self.name = f"efuse_array_{nwords}x{word_width}"
         self.ncpus = ncpus
         self.xyce_netlist = xyce_netlist.lower()
-        self.digital_wrapper = digital_wrapper.lower()
+        self.digital_wrapper = digital_wrapper
         self.skip_checks = skip_drclvs
 
         self.root_dir = root_dir
@@ -149,7 +150,7 @@ class EfuseFlow:
         self.gds_name = Path(self.name + ".gds").absolute()
         self.add_cells_json = Path("add_cells.json").absolute()
         logging.info("Generating eFuse array GDS file... ")
-        create_efuse_array(self.gds_name, self.name, self.nwords, self.word_width, add_cells = self.add_cells_json)
+        create_efuse_array(self.gds_name, self.name, self.nwords, self.word_width, flat=False, add_cells = self.add_cells_json)
         logging.info(f"eFuse array cell written to {self.gds_name.name}.")
 
         logging.info("Generating eFuse array LEF file... ")
@@ -206,7 +207,7 @@ class EfuseFlow:
         """
         Xyce test helper.
         """
-        logging.info(f"Running tests for {name} netlist...")
+        logging.info(f"Running Xyce tests for {name} netlist...")
         test = EfuseArrayTest(self.nwords, self.word_width, self.tb_name, netlist, self.spice_name, is_flat, 5.0, self.ncpus)
         if not test.run_tests():
             self.panic("Xyce test failed, stopping.")
@@ -229,26 +230,31 @@ class EfuseFlow:
 
         logging.info("Xyce tests completed succesfully!")
 
+    def generate_verilog(self):
+        """
+        Generate Verilog model & blackbox
+        """
+        logging.info("Generating Verilog models...")
+        v = EfuseVerilog(self.name, self.nwords, self.word_width)
+        v.gen_verilog()
+        self.verilog_bb = v.bb_file
+        self.verilog_model = v.model_file
+
     def gen_digital_wrapper(self):
         """
         Create Librelane digital wrappers around eFuse blocks.
         """
+        if self.digital_wrapper[0] != "none":
+            logging.info(f"Implementing {self.digital_wrapper[0]} digital wrapper with Librelane...")
 
-        if self.digital_wrapper == "wishbone":
-            logging.info("Implementing Wishbone wrapper with Librelane...")
-
-            self.digital = EfuseLibrelaneWb(self.name, self.gds_name, self.lef_name, self.nwords, self.word_width)
+            self.digital = EfuseLibrelane(self.digital_wrapper, self.name, self.gds_name, self.lef_name, self.verilog_bb, self.nwords, self.word_width)
             self.digital.run()
             if not self.digital.final:
-                self.panic("Wishbone wrapper generation failed!")
-
-            # generate better lef (needed if generated without power rings)
-            # self.run_magic("magic_lef", {"GDS" : self.digital.gds, "CELL" : self.digital.name, 
-            #     "LEF" : self.digital.lef, "HIDE" : "10"}, log = "digital_magic_lef.log")
+                self.panic("Digital wrapper generation failed!")
 
             self.digital_release_dir = self.release_dir / self.digital.name
 
-            logging.info("Wishbone wrapper generated successfully!")
+            logging.info("Digital wrapper generated successfully!")
         else:
             self.digital_release_dir = None
 
@@ -262,6 +268,8 @@ class EfuseFlow:
         copy(self.lef_name, self.release_dir)
         copy(self.spice_name, self.release_dir)
         copy(self.pex_netlist, self.release_dir)
+        copy(self.verilog_bb, self.release_dir)
+        copy(self.verilog_model, self.release_dir)
 
         if self.digital_release_dir:
             os.makedirs(self.digital_release_dir, exist_ok=True)
@@ -294,6 +302,8 @@ class EfuseFlow:
 
         self.xyce_tests()
 
+        self.generate_verilog()
+
         self.gen_digital_wrapper()
 
         self.release_files()
@@ -317,12 +327,23 @@ def main():
     parser.add_argument("--digital-wrapper", type = str, default = "none", choices=["none", "wishbone"],
         help = "Generate digital wrapper with Librelane, default = none."
     )
+    parser.add_argument("--digital-depth", type = int, default = None, help = "Depth of digital memory block.")
+    parser.add_argument("--digital-width", type = int, default = None, help = "Width of digital memory block.")
     args = parser.parse_args()
     
     root_dir = Path(__file__).parent.absolute() 
     
+    if not args.digital_width:
+        args.digital_width = args.word_width    
+
+    if not args.digital_depth:
+        args.digital_depth = args.number_of_words
+
     # run the flow
-    flow = EfuseFlow(args.number_of_words, args.word_width, root_dir, args.xyce_netlist, args.digital_wrapper, args.ncpus, args.skip_drclvs, args.verbose)
+    flow = EfuseFlow(args.number_of_words, args.word_width, root_dir, args.xyce_netlist, 
+        (args.digital_wrapper, args.digital_depth, args.digital_width),
+        args.ncpus, args.skip_drclvs, args.verbose
+    )
     flow.run_flow()
     
     

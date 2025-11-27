@@ -1,4 +1,5 @@
 .vscode
 runs
+macros
 __pycache__
 sim_build

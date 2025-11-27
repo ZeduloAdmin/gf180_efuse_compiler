@@ -346,7 +346,8 @@ class EfuseArray(CellGf180mcu):
         endcap_cell = Endcap(l)
         fillcap_cell = FillCap(l)
         filltie_cell = FillTie(l)
-        inv_cell = Inv1(l)
+        if buf_col_sel:
+            inv_cell = Inv1(l)
         self.add_cells = {}
 
         site_size = endcap_cell.wdt

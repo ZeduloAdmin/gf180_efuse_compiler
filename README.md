@@ -1,17 +1,17 @@
 # GF180MCU eFuse array compiler
 
-This repository contains an eFuse array compiler for the GF180MCU technology. Original compiler was used to do a tapeout during the Open MPW GFMPW-0 run, but this branch holds a newer compiler version with increased density and automated flow scripts. This branch is still in the development phase and is not ready for general use.
+This repository contains an eFuse array compiler for the GF180MCU technology. [Original compiler](https://github.com/egorxe/gf180_efuse_compiler/commit/444cecf080246598029439b6df1605e37e3599de) was used to do a tapeout during the Open MPW GFMPW-0 run, but recently compiler was rewritten from scratch to increase density and automate the flow. Current version of the compiler is much more usable, but still not verified in silicon and should be treated as experimental.
 
 ## Compiler features
 
 eFuse compiler provides:
 
 * Generation of synchronous nonvolatile eFuse memory array for the GF180MCU process.
-* GDS and over files necessary for integration into any GF180MCU-based chip design.
+* GDS and other files necessary for integration into any GF180MCU-based chip design.
 * Configurable word width and memory depth. Currently only 16, 32 and 64 word depths are supported.
-* eFuse memory density up to 10 kbits/mm^2.
+* eFuse memory density up to 10 kbits/mm^2 (without digital wrapper).
 * Support for the open source GF180MCU PDK.
-* Digital wrapper with Wishbone interface to eFuse memory (TODO).
+* Digital wrapper with Wishbone interface to eFuse memory.
 
 ## Requirements
 
@@ -20,10 +20,11 @@ To generate and verify an eFuse array a Linux system is required with the follow
 2. KLayout 0.29+ (for DRC & LVS).
 3. magic (any version compatible with GF180MCU PDK for the circuit extraction).
 4. Xyce (any version compatible with GF180MCU PDK for the circuit verification).
+5. LibreLane version with GF180MCU support, environment from [wafer.space project template](https://github.com/wafer-space/gf180mcu-project-template) is recommended.
 
-Additionally the open source GF180MCU PDK should be installed and environmental variables PDK_ROOT should point to it's location and variable PDK to directory name. The recommended way to install the PDK is the [ciel tool](https://github.com/fossi-foundation/ciel). 
+Additionally the open source GF180MCU PDK should be installed and environmental variable PDK_ROOT should be set to it's location and variable PDK to specific PDK variant (for example gf180mcuD). The recommended way to install the PDK is the [ciel tool](https://github.com/fossi-foundation/ciel). 
 
-Alternatively it's possible to use a ready made container with all required tools and PDK preinstalled like the [IIC-OSIC-TOOLS](https://github.com/iic-jku/IIC-OSIC-TOOLS) container.
+Alternatively it's possible to use a ready made environment with all required tools and PDK preinstalled like the [IIC-OSIC-TOOLS](https://github.com/iic-jku/IIC-OSIC-TOOLS) container (does not contain suitable LibreLane yet, digital wrapper generation will not work) or [wafer.space project template environment](https://github.com/wafer-space/gf180mcu-project-template) (Xyce is not included).
 
 ## How to run
 
@@ -43,7 +44,7 @@ To generate 64x64 array skipping Xyce verification run:
 
 ## Examples
 
-Files for several precompiled configurations are provided in the macros directory. Here are some GDS screenshots.
+Files for several precompiled configurations are provided in the releases. Here are some GDS screenshots.
 
 ![efuse_array_16x1](docs/efuse_array_16x1.png?raw=true)
 
@@ -56,7 +57,7 @@ Larger eFuse array with 64 8-bit words.
 ## TODO
 
 * Improve a sense amplifier to reduce read currents.
-* Add a digital wrapper generation for Wishbone and probably SPI interfaces.
-* Fill sense amp digital cells column with buffers and capacitor cells.
-* Allow more different memory configurations and improve aspect ratios for large arrays.
-* Add some documentation.
+* Add a digital wrapper with SPI interface.
+* Improve aspect ratios for large arrays.
+* Implement async eFuse.
+* Add block integration documentation.
