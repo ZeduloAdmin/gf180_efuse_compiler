@@ -188,7 +188,7 @@ class EfuseFlow:
         """
         logging.info("Performing KLayout DRC...")
         self.run(
-            ["python3", self.pdk_path / "libs.tech/klayout/drc/run_drc.py", f"--path={self.gds_name}", 
+            ["python3", self.pdk_path / "libs.tech/klayout/tech/drc/run_drc.py", f"--path={self.gds_name}", 
                 f"--variant={str(self.pdk_path)[-1]}", f"--topcell={self.name}", f"--mp={self.ncpus}"],
             "drc.log", "DRC run failed, or GDS is not DRC clean"
         )
@@ -196,7 +196,7 @@ class EfuseFlow:
         
         logging.info("Performing KLayout LVS...")
         self.run(
-            ["python3", self.pdk_path / "libs.tech/klayout/lvs/run_lvs.py", f"--layout={self.gds_name}", "--lvs_sub=VSS", "--schematic_simplify",
+            ["python3", self.pdk_path / "libs.tech/klayout/tech/lvs/run_lvs.py", f"--layout={self.gds_name}", "--lvs_sub=VSS", "--schematic_simplify",
                 f"--variant={str(self.pdk_path)[-1]}", f"--topcell={self.name}", f"--netlist={self.klvs_name}", f"--thr={self.ncpus}"],
             "lvs.log", "LVS run failed."
         )

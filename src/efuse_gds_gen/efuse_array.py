@@ -452,6 +452,7 @@ class EfuseArray(CellGf180mcu):
             out = bitline_cell.find_boxes_with_text(l.metal1, l.metal1_label, "OUT")
             assert(len(out) == 1)
             out = self.place_via_tower(out[0].transformed(bitline.trans).center() + db.Point(100, -100), 1, 3, True)
+            self.create_box_p(l.metal3, out.p1, out.p2 + db.Point(500, 500))
             self.create_text_p(l.metal3_label, out.center(), f"OUT[{i}]")
 
 
