@@ -79,10 +79,14 @@ module `EFUSE_WBMEM_NAME #(
     genvar i;
     generate
         for (i = 0; i < EFUSE_ARRAYS_DPT; i = i + 1) begin : efuse_gen_depth
-            `EFUSE_ARRAY_NAME #(
+            `EFUSE_ARRAY_NAME 
+            `ifdef SIM
+            #(
                 .NWORDS(EFUSE_NWORDS),
                 .WORD_WIDTH(EFUSE_WORD_WIDTH)
-            ) efuse_array (
+            )
+            `endif
+            efuse_array (
                 .BIT_SEL    (bit_sel),
                 .COL_PROG_N (col_prog_n[EFUSE_WORD_WIDTH*(i+1)-1:EFUSE_WORD_WIDTH*i]),
                 .PRESET_N   (preset_n[i]),

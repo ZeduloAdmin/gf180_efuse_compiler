@@ -12,7 +12,7 @@ set wb_inputs [get_ports [list wb_stb_i wb_cyc_i wb_adr_i* wb_dat_i* wb_sel_i* w
 set_input_delay -max -clock wb_clk $in_delay $wb_inputs 
 set_output_delay -max -clock wb_clk $out_delay [get_ports [list wb_dat_o* wb_ack_o]] 
 
-set_driving_cell -lib_cell gf180mcu_fd_sc_mcu7t5v0__buf_1 -pin Z -max -from_pin I -input_transition_rise $max_in_tran -input_transition_fall $max_in_tran $wb_inputs
+set_driving_cell -lib_cell gf180mcu_fd_sc_mcu7t5v0__buf_2 -pin Z -max -from_pin I -input_transition_rise $max_in_tran -input_transition_fall $max_in_tran $wb_inputs
 
 set derate 0.05
 set_timing_derate -early [expr 1-$derate]

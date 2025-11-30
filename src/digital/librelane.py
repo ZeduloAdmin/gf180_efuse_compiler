@@ -111,7 +111,7 @@ class EfuseLibrelane(LibrelaneRunner):
         # check requested parameters
         if params[0] != "wishbone":
             self.panic("Only Wishbone wrapper is supported for now.")
-            
+
         supported_params = (
             ("wishbone", 32, 8), ("wishbone", 64, 8), ("wishbone", 64, 32), ("wishbone", 128, 8), 
             ("wishbone", 512, 32), ("wishbone", 1024, 32), 
@@ -144,12 +144,6 @@ class EfuseLibrelane(LibrelaneRunner):
                     array_y = float(match.group(2))
                     break
 
-        # skip some steps
-        self.substitute_step("Verilator.Lint")
-        self.substitute_step("Magic.StreamOut")
-        self.substitute_step("KLayout.XOR")
-        self.substitute_step("OpenROAD.IRDropReport")
-
         # set basic vars
         self.name = f"efuse_wb_mem_{params[1]}x{params[2]}"
         self.config["DESIGN_NAME"] = self.name
@@ -171,11 +165,13 @@ class EfuseLibrelane(LibrelaneRunner):
         ]
 
         # floorplan & PDN
-        self.config["FP_SIZING"] = "absolute"
-        wb_area = 35000 # estimate
-        cm = 10
+        cm = 10         # core margin
+        wb_area = 35000 # area estimate
+        if (n_arrays_depth < 2) and (mask > 1):
+            wb_area += 2000
         array_step_x = (int((wb_area / (n_arrays_depth * array_y))*10)/10) + 35
 
+        self.config["FP_SIZING"] = "absolute"
         self.config["DIE_AREA"] = da = [0, 0, array_x*n_arrays_depth + array_step_x*n_arrays_depth, array_y+50]
         self.config["CORE_AREA"] = [da[0] + cm, da[1] + cm, da[2] - cm, da[3] - cm]
         self.config["IO_PIN_ORDER_CFG"] = str(self.cd / "pin.cfg")
@@ -203,8 +199,10 @@ class EfuseLibrelane(LibrelaneRunner):
         self.config["GRT_ALLOW_CONGESTION"] = True
         self.config["RSZ_DONT_TOUCH_RX"] = ".*_keep_cell"
         self.config["DIODE_ON_PORTS"] = "in"
-        self.config["RUN_HEURISTIC_DIODE_INSERTION"] = True
-        self.config["HEURISTIC_ANTENNA_THRESHOLD"] = 300
+        self.config["DESIGN_REPAIR_MAX_WIRE_LENGTH"] = 800
+        if n_arrays_depth > 1:
+            self.config["RUN_HEURISTIC_DIODE_INSERTION"] = True
+            self.config["HEURISTIC_ANTENNA_THRESHOLD"] = 500
 
         # efuse macro
         array_inst = {}

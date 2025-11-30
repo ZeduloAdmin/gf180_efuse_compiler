@@ -184,11 +184,12 @@ class BitlineBlock(CellGf180mcu):
             y = nmos_poly_bbox.center().y
             self.place_via_tower(db.Point(x, y), 1, 3, True)
             x2 = x + i * BITSEL_STEP
-            wdt = M2_MIN_WDT // 2
-            if i == 1:
-                wdt += 50 # to avoid min dist error
-            m3 = self.create_box(l.metal3, x, y - wdt, x2, y + wdt)
-            bitsel_boxes.append(self.place_via_tower(db.Point(x2 + M2_MIN_WDT // 2, m3.center().y), 3, 4, True))
+            if x != x2:
+                wdt = M2_MIN_WDT // 2
+                if i == 1:
+                    wdt += 50 # to avoid min dist error
+                self.create_box(l.metal3, x, y - wdt, x2, y + wdt)
+            bitsel_boxes.append(self.place_via_tower(db.Point(x2 + M2_MIN_WDT // 2, y), 3, 4, True))
             
             # create fuse cathode - nmos connection
             if i < 2:

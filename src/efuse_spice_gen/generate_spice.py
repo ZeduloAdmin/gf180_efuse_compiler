@@ -46,21 +46,11 @@ def efuse_bitline(n_fuses : int, device_naming : list) -> str:
     return subcircuit("efuse_bitline", bitline_ports, body, "LNUM=0")
 
 def efuse_array(cellname : str, word_width : int, n_fuses : int, add_cells : str = "") -> str:
-
-    # buffered bit sel
-    # common_ports = "VSS VDD SENSE PRESET_N "
-    # sel_ports = "".join([f'BIT_SEL_BUF[{j}] ' for j in range(n_fuses)])
-    # array_ports = common_ports + "".join([f'BIT_SEL[{j}] ' for j in range(n_fuses)])
-
-    # unbuffered bit sel
     common_ports = "VSS VDD SENSE PRESET_N " + "".join([f'BIT_SEL[{j}] ' for j in range(n_fuses)])
     array_ports = common_ports
     sel_ports = ""
 
     body = add_cells
-
-    # for i in range(n_fuses):
-    #     body += f"Xsbuf{i} BIT_SEL[{i}] BIT_SEL_BUF[{i}] VDD VDD VSS VSS gf180mcu_fd_sc_mcu7t5v0__buf_1\n"
 
     for i in range(word_width):
         bitline_ports = f"COL_PROG_N[{i}] OUT[{i}] "

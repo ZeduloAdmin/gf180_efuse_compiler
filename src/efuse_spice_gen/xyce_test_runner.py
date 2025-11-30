@@ -143,7 +143,7 @@ class XyceTestRunner:
             d.write_pwl()
 
         # patch simulation time in testbench
-        self.regexp_patch(self.run_tb, r"^\.tran (\d*)ps (.*)", f".tran \\1ps {self.time}")
+        self.regexp_patch(self.run_tb, r"^\.tran (\d+)ps (?:\d+([.]\d*)?(?:e[+-]?\d+)?|[.]\d+(?:e[+-]?\d+)?)(.*)", f".tran \\1ps {self.time} \\2")
 
     def run_xyce_sim(self):
         """
@@ -207,14 +207,17 @@ class XyceTestRunner:
         else:
             assert False, f"Digital signal {n} is in indeterminate state during test at time {self.cur_simlog(0)}!"
 
-    def verify_bus_state(self, time : float, bus : str, wdt : int, expected : int):
+    def verify_signal_state(self, time : float, name : str, wdt : int, expected : int, is_bus : bool):
         """
         Check the simulation log to verify that the bus has an expected value at specific time.
         """
         self.goto_simlog_time(time)
         word = 0
-        for i in range(wdt):
-            word += self.volt_to_digital(f"{bus}[{i}]") << i
+        if is_bus:
+            for i in range(wdt):
+                word += self.volt_to_digital(f"{name.upper()}[{i}]") << i
+        else:
+            word += self.volt_to_digital(f"{name.upper()}")
         assert (word == expected), f"Word read from eFuse in simulation differs from expected in test {self.test_name}!"
 
     def write_table_include(self, fname : str, table : dict):
@@ -249,7 +252,13 @@ class XyceTestRunner:
         Perform all registered bus state checks.
         """
         for c in self.checks:
-            self.verify_bus_state(c[0], c[1], c[2], c[3])
+            self.verify_signal_state(c[0], c[1], c[2], c[3], c[4])
+
+    def add_check(self, signal, wdt, val, is_bus : bool = True):
+        """
+        Add a check to verify signal state at current time.
+        """
+        self.checks.append((self.time, signal, wdt, val, is_bus))
 
     def simulate_and_check(self):
         """

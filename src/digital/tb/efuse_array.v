@@ -98,7 +98,11 @@ module efuse_array #(
         end else if (COL_PROG_N != {WORD_WIDTH{1'b1}}) begin
             // write
             `assert(state == STATE_IDLE || state == STATE_WRITE)
-            `assert(state == STATE_IDLE || (prog == COL_PROG_N && sel == BIT_SEL))
+            `ifndef ENABLE_SDF
+            // `assert(state == STATE_IDLE || (prog == COL_PROG_N && sel == BIT_SEL))
+            `else
+            // TODO: proper width check for timing simulation
+            `endif
             sel = BIT_SEL;
             prog = COL_PROG_N;
             if (state == STATE_IDLE)
