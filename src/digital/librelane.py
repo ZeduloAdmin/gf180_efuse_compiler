@@ -198,11 +198,11 @@ class EfuseLibrelane(LibrelaneRunner):
         self.config["RT_MAX_LAYER"] = "Metal4"
         self.config["GRT_ALLOW_CONGESTION"] = True
         self.config["RSZ_DONT_TOUCH_RX"] = ".*_keep_cell"
-        self.config["DIODE_ON_PORTS"] = "in"
-        self.config["DESIGN_REPAIR_MAX_WIRE_LENGTH"] = 800
-        if n_arrays_depth > 1:
-            self.config["RUN_HEURISTIC_DIODE_INSERTION"] = True
-            self.config["HEURISTIC_ANTENNA_THRESHOLD"] = 500
+        self.config["DIODE_ON_PORTS"] = "both"
+        self.config["DESIGN_REPAIR_MAX_WIRE_LENGTH"] = 1000
+        self.config["GRT_ANTENNA_MARGIN"] = 30
+        self.config["GRT_ANTENNA_ITERS"] = 10
+        self.config["DRT_ANTENNA_REPAIR_ITERS"] = 10
 
         # efuse macro
         array_inst = {}
